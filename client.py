@@ -56,8 +56,9 @@ banned = False
 
 MAXBYTES = 4096
 
-if len(sys.argv) != 3:
-    print("You need to provide part and address of server to connect")
+if len(sys.argv) < 3:
+    print("You need to provide port and address of server to connect")
+    sys.exit(1)
 
 HOST = sys.argv[1]
 PORT = int(sys.argv[2])
@@ -65,7 +66,12 @@ PORT = int(sys.argv[2])
 socketaddr = (HOST, PORT)
 
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-s.connect(socketaddr)
+try:
+    s.connect(socketaddr)
+except ConnectionRefusedError:
+    print("Connection refused")
+    sys.exit(1)
+    
 data = s.recv(MAXBYTES).decode()
 nickname = ""
 
@@ -121,9 +127,9 @@ else:
     os.close(secret_file)
 
     print("Commands available: ")
-    print("\t 1. Show list of all available clients.")
-    print("\t 2. Send the message to one specific client by nickname.")
-    print("\t 3. Send message to all the available clients.\n")
+    print("\t 1. Show list of all available clients. (!list)")
+    print("\t 2. Send the message to one or more specific clients by nickname. (@Example1 @Example2 Hello!)")
+    print("\t 3. Send message to all the available clients. (without any @ or !)\n")
 
 main_fork = os.fork()
 if main_fork == 0:
@@ -193,8 +199,9 @@ if main_fork == 0:
         for elt in readable:
             if elt == pipe:
                 command = os.read(pipe, MAXBYTES)
-                if len(command) == 0:
-                    break
+                if command.decode() == "\n":
+                    os.write(logfile_descriptor, "\nSYSTEM: You need to write something to send!\n".encode())
+                    continue
                 try:
                     s.send(command)
                 except BrokenPipeError:
@@ -223,7 +230,7 @@ if main_fork == 0:
                     
                     
                 if data == "SOS":
-                    sys.exit(0)
+                    os.kill(os.getppid(), signal.SIGINT)
                 elif "YOU ARE BANNED" in data:
                     print(f"\n\n{data}")
                     os.kill(os.getppid(), signal.SIGUSR1)

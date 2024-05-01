@@ -37,8 +37,8 @@ def send_to_everyone(message: str):
         if s != None:
             s.send(message.encode())
 
-def send_to_person(parts, message, s, ifServer=False):
-    nickname = parts[0][1:]
+def send_to_person(nick, message, s, ifServer=False):
+    nickname = nick[1:]
     if nickname == "ADMIN" or nickname == "Admin":
         print(f"\n@{find_by_socket(s)}: {message}\n")
         return
@@ -55,7 +55,10 @@ def send_to_person(parts, message, s, ifServer=False):
             friend_socket.send(f"\n@{find_by_socket(s)}: {message}\n".encode())
             s.send(f"\n@{find_by_socket(s)} to @{nickname}: {message}\n".encode())
     else:
-        s.send("\n@SERVER: currently there is no such user connected :(\n".encode())
+        if ifServer:
+            print("\n@SERVER: currently there is no such user connected :(\n")
+        else:
+            s.send("\n@SERVER: currently there is no such user connected :(\n".encode())
         
 
 def send_list_of_connected_users(s):
@@ -86,9 +89,12 @@ def contains_in_dict_value(generated_code):
             return True
     return False
 
-
-HOST = "127.0.0.1" # or 'localhost' or '' - Standard loopback interface address
-PORT = 2003 # Port to listen on (non-privileged ports are > 1023)
+if len(sys.argv) < 2:
+    print("You need to provide port of server.")
+    sys.exit(1)
+    
+HOST = "127.0.0.1"
+PORT = int(sys.argv[1])
 MAXBYTES = 4096
 child_processes = []
 signal.signal(signal.SIGINT, correct_signal_handler)
@@ -119,7 +125,7 @@ child_processes.append(child2)
 while len(socketlist) > 0:
     (readable, _, _) = select.select(socketlist, [], [])
     for s in readable:
-        if s == serversocket: # serversocket receives a connection
+        if s == serversocket:
             (clientsocket, (addr, port)) = s.accept()
             if isAvailable:
                 clientsocket.send(f"OK".encode())
@@ -169,20 +175,20 @@ while len(socketlist) > 0:
             if "!ban" in command:
                 nickname = command.split(" ")[0]
                 send_to_everyone(f"\n@Everyone from @ADMIN: WAS BANNED {nickname}\n")
-                send_to_person(parts, "YOU ARE BANNED", s, ifServer=True)
+                send_to_person(nickname, "YOU ARE BANNED", s, ifServer=True)
                 socket_to_ban = allAvailable[nickname[1:]][0]
                 stop_client(socket_to_ban)
             elif "!suspend" in command:
                 nickname = command.split(" ")[0][1:]
                 send_to_everyone(f"\n@Everyone from @ADMIN: WAS FREEZED @{nickname}\n")
-                send_to_person(parts, "YOU ARE FREEZED", s, ifServer=True)
+                send_to_person(f"@{nickname}", "YOU ARE FREEZED", s, ifServer=True)
                 cliend_socket = allAvailable[nickname][0]
                 code = allAvailable[nickname][2]
                 allAvailable[nickname] = (cliend_socket, "freezed", code)
             elif "!forgive" in command:
                 nickname = command.split(" ")[0][1:]
                 send_to_everyone(f"\n@Everyone from @ADMIN: WAS UNFREEZED @{nickname}\n")
-                send_to_person(parts, "YOU ARE UNFREEZED", s, ifServer=True)
+                send_to_person(f"@{nickname}", "YOU ARE UNFREEZED", s, ifServer=True)
                 cliend_socket = allAvailable[nickname][0]
                 code = allAvailable[nickname][2]
                 allAvailable[nickname] = (cliend_socket, "active", code)
@@ -190,15 +196,26 @@ while len(socketlist) > 0:
                 isAvailable = False
                 server_collection = "\n------------!START------------\n"
             elif "@" in parts[0]:
-                server_collection = f"\n@ADMIN to {parts[0]}: {message}\n"
-                send_to_person(parts, message, s, True)
+                nicks = []
+                i = 0
+                while i < len(parts) and "@" in parts[i]:
+                    nicks.append(parts[i])
+                    i += 1
+
+                j = 0
+                message = " ".join(parts[i:])
+                while j < len(nicks):
+                    server_collection = f"\n@{find_by_socket(s)} to {nicks[j]}: {message}\n"
+                    send_to_person(nicks[j], message, s, True)
+                    os.write(server_logfile, server_collection.encode())
+                    j += 1
             else:
                 message = f"\n@Everyone from @ADMIN: {message}\n"
                 server_collection = message
                 send_to_everyone(message)
             os.write(server_logfile, server_collection.encode())
         
-        else: # data is sent from given client
+        else:
             command = s.recv(MAXBYTES).decode().rstrip("\n")            
             if len(command) == 0:
                 stop_client(s, "manually")
@@ -210,14 +227,24 @@ while len(socketlist) > 0:
                 server_collection = ""
                 parts = command.split(" ")
                 if "@" in parts[0]:
-                    message = " ".join(parts[1:])
-                    server_collection = f"\n@{find_by_socket(s)} to {parts[0]}: {message}\n"
-                    send_to_person(parts, message, s)
+                    nicks = []
+                    i = 0
+                    while i < len(parts) and "@" in parts[i]:
+                        nicks.append(parts[i])
+                        i += 1
+
+                    j = 0
+                    message = " ".join(parts[i:])
+                    while j < len(nicks):
+                        server_collection = f"\n@{find_by_socket(s)} to {nicks[j]}: {message}\n"
+                        send_to_person(nicks[j], message, s)
+                        os.write(server_logfile, server_collection.encode())
+                        j += 1
                 else:
                     message = f"\n@Everyone from @{find_by_socket(s)}: {command}\n"
                     server_collection = message
                     send_to_everyone(message)
-                os.write(server_logfile, server_collection.encode())
+                    os.write(server_logfile, server_collection.encode())
                     
             
             
